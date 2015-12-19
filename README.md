@@ -1,5 +1,7 @@
 odoo-saas-tools
 =================
+
+[![Join the chat at https://gitter.im/thinkopensolutions/odoo-saas-tools](https://badges.gitter.im/thinkopensolutions/odoo-saas-tools.svg)](https://gitter.im/thinkopensolutions/odoo-saas-tools?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 Odoo (OpenERP) addons to provide SaaS
 
 Structure of SaaS system:
