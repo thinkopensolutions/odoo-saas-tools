@@ -5,11 +5,13 @@
 # Copyright (C) Thinkopen Solutions (<http://www.thinkopensolutions.com.br&gt;)
 # License AGPL-3 - See http://www.gnu.org/licenses/agpl-3.0.html
 {
-    'name': 'TKo SaaS Access Rights',
-    'category': 'Tko saas',
+    'name': 'TKO SaaS Access Rights',
+    'category': 'SaaS',
     'summary': 'Add additional access rights to SaaS module',
-    'website': 'www.geminatecs.com',
-    'author' : 'Geminate Consultancy Services',
+    'website': 'http://tko.tko-uk.com/',
+    "license": "AGPL-3", 
+    'author' : 'TKO',
+    'version': '10.0.0.0.0',
     'depends': ['saas_portal'],
     'data': [
         'security/ir.model.access.csv',
