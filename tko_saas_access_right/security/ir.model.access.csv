@@ -1,0 +1,17 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+tko_access_saas_1,tko_access_saas_portal_client_user,saas_portal.model_saas_portal_client,,1,1,1,0
+tko_access_saas_2,tko_access_saas_portal_support_team_user,saas_portal.model_saas_portal_support_team,,1,0,0,0
+tko_access_saas_3,tko_access_saas_portal_server_user,saas_portal.model_saas_portal_server,,1,0,0,0
+tko_access_saas_4,tko_access_saas_portal_subscription_log_user,saas_portal.model_saas_portal_subscription_log,,1,0,0,0
+tko_access_saas_5,tko_access_oauth_application_user,oauth_provider.model_oauth_application,,1,1,1,0
+tko_access_saas_6,tko_access_oauth_access_token_user,saas_base.model_saas_base_client,,1,1,1,0
+tko_access_saas_7,tko_access_saas_portal_database_user,saas_portal.model_saas_portal_database,,1,1,1,0
+tko_access_saas_8,tko_access_saas_portal_plan_user,saas_portal.model_saas_portal_plan,,1,0,0,0
+tko_access_saas_9,tko_access_saas_portal_client_manager,saas_portal.model_saas_portal_client,,1,1,1,0
+tko_access_saas_10,tko_access_saas_portal_support_team_manager,saas_portal.model_saas_portal_support_team,,1,0,0,0
+tko_access_saas_11,tko_access_saas_portal_server_manager,saas_portal.model_saas_portal_server,,1,0,0,0
+tko_access_saas_12,tko_access_saas_portal_subscription_log_manager,saas_portal.model_saas_portal_subscription_log,,1,0,0,0
+tko_access_saas_13,tko_access_oauth_application_manager,oauth_provider.model_oauth_application,,1,1,1,0
+tko_access_saas_14,tko_access_oauth_access_token_manager,saas_base.model_saas_base_client,,1,1,1,0
+tko_access_saas_15,tko_access_saas_portal_database_manager,saas_portal.model_saas_portal_database,,1,1,1,0
+tko_access_saas_16,tko_access_saas_portal_plan_manager,saas_portal.model_saas_portal_plan,,1,1,1,1
