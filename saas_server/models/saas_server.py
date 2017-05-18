@@ -190,6 +190,11 @@ class SaasServerClient(models.Model):
     def update_all(self):
         self.sudo().search([]).update()
 
+    @api.multi
+    def update_one(self):
+        self.ensure_one()
+        self.sudo().update()
+
     @api.one
     def update(self):
         try:
@@ -394,3 +399,8 @@ class SaasServerClient(models.Model):
             res.append(data)
 
         return res
+
+    @api.model
+    def restart_server(self):
+        openerp.service.server.restart()
+        return True

@@ -2,7 +2,7 @@
 <openerp>
     <data>
         <menuitem name="SaaS" id="menu_base_saas" sequence="30" />
-        <menuitem id="menu_saas" parent="menu_base_saas" name="SaaS" sequence="1" />
+        <menuitem id="menu_saas" parent="menu_base_saas" name="SaaS" sequence="1" web_icon="saas_portal,static/description/icon.png" />
 
         <!-- Client -->
         <record id="view_clients_tree" model="ir.ui.view">
@@ -28,8 +28,7 @@
                     <button name="show_upgrade_wizard" attrs="{'invisible':[('state', 'in', ['deleted'])]}" type="object" icon="fa-cogs" help="Configure client database"/>
                     <button name="delete_database_server" type="object" attrs="{'invisible':[('state', 'in', ['draft', 'deleted'])]}" icon="fa-eraser" help="Delete client database"
                     confirm="Are you sure to delete this database?"/>
-                    <button name="%(action_view_subscription_wizard)d" string="Manage subscription"
-                      type="action" context="{'default_client_id': id, 'default_expiration': expiration_datetime}"/>
+                    <button name="%(action_view_subscription_wizard)d" string="Manage subscription" type="action" attrs="{'invisible':[('state', 'not in', ['open', 'pending'])]}"/>
                 </tree>
             </field>
         </record>
@@ -51,6 +50,7 @@
                         <button string="Delete" name="delete_database_server" type="object" attrs="{'invisible':['|',('state', 'in', ['draft', 'deleted'])]}" icon="fa-eraser" 
                         confirm="Are you sure to delete this database?"/>
                         <button string="Sync server" type="object" name="action_sync_server" icon="fa-refresh"/>
+                        <button string="Sync client" type="object" name="sync_client" icon="fa-refresh"/>
                         <button name="%(saas_portal.action_rename_database)d" string="Rename Database" type="action"/>
                         <button name="%(action_view_subscription_wizard)d" string="Manage subscription"
                           type="action" context="{'default_client_id': id, 'default_expiration': expiration_datetime}"/>
@@ -152,6 +152,7 @@
                     <field name="sequence" widget="handle"/>
                     <field name="name"/>
                     <field name="active"/>
+                    <field name="odoo_version"/>
                 </tree>
             </field>
         </record>
@@ -176,6 +177,7 @@
                     <sheet>
                     <group>
                         <group>
+                            <field name="odoo_version"/>
                             <field name="name"/>
                             <field name="client_id"/>
                             <field name="active"/>
@@ -187,6 +189,9 @@
                           <field name="verify_ssl" attrs="{'invisible': [('local_request_scheme', '!=', 'https')]}"/>
                           <field name="local_host"/>
                           <field name="local_port"/>
+                        </group>
+                        <group string="Credentials for rpc">
+                          <field name="password" password="True"/>
                         </group>
                     </group>
                     <field name="client_ids" readonly="1">
@@ -269,6 +274,7 @@
                             <group string="Plan Settings">
                                 <field name="dbname_template"/>
                                 <field name="expiration"/>
+                                <field name="grace_period"/>
                                 <field name="maximum_allowed_dbs_per_partner"/>
                                 <field name="maximum_allowed_trial_dbs_per_partner"/>
                             </group>
@@ -278,6 +284,8 @@
                             <field name="total_storage_limit" class="oe_inline"/>
                             <field name="block_on_expiration" class="oe_inline"/>
                             <field name="block_on_storage_exceed" class="oe_inline"/>
+                            <field name="on_create"/>
+                            <field name="on_create_email_template" attrs="{'invisible': [('on_create', '!=', 'email')]}"/>
                         </group>
                         <separator string="Odoo DB Settings"/>
                         <group col="4">

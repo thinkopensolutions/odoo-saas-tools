@@ -1,9 +1,11 @@
 [![Build Status](http://runbot.it-projects.info/runbot/badge/flat/odoo-saas-tools/10.0.svg)](http://runbot.it-projects.info/demo/odoo-saas-tools/10.0)
 
-odoo-saas-tools
+Odoo SaaS Tools
 ===============
 
 System to sale and manage odoo databases.
+
+https://it-projects-llc.github.io/odoo-saas-tools/
 
 Requirements
 ============
@@ -24,7 +26,7 @@ Build and run
 
 Execute saas.py script and wait some time
 
-> python saas.py --portal-create --server-create --plan-create --run --odoo-script=/path/to/openerp-server --odoo-config=/path/to/openerp-server.config
+> python saas.py --portal-create --server-create --plan-create --run --odoo-script=/path/to/odoo-bin --odoo-config=/path/to/odoo-server.config
 
 The SaaS system is ready! Try, for example, open start page:
 

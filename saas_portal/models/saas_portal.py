@@ -1,4 +1,10 @@
 # -*- coding: utf-8 -*-
+import simplejson
+import werkzeug
+import requests
+import random
+from datetime import datetime, timedelta
+
 from odoo import api
 from odoo import exceptions
 from odoo import fields
@@ -8,12 +14,7 @@ from odoo.tools.translate import _
 from odoo.addons.base.res.res_partner import _tz_get
 from datetime import datetime, timedelta
 from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
-import simplejson
-import werkzeug
-import requests
-import random
 
-from datetime import datetime, timedelta
 from odoo.tools import DEFAULT_SERVER_DATETIME_FORMAT
 from odoo.addons.saas_base.exceptions import MaximumDBException, MaximumTrialDBException
 
@@ -54,12 +55,14 @@ class SaasPortalServer(models.Model):
     local_port = fields.Char('Local port', help='local tcp port of server for server-side requests')
     local_request_scheme = fields.Selection([('http', 'http'), ('https', 'https')], 'Scheme', default='http', required=True)
     host = fields.Char('Host', compute=_compute_host)
+    odoo_version = fields.Char('Odoo version', readonly=True)
+    password = fields.Char()
 
     @api.model
     def create(self, vals):
-        self = super(SaasPortalServer, self).create(vals)
-        self.oauth_application_id._get_access_token(create=True)
-        return self
+        record = super(SaasPortalServer, self).create(vals)
+        record.oauth_application_id._get_access_token(create=True)
+        return record
 
     @api.one
     def _request_params(self, path='/web', scheme=None, port=None, state={}, scope=None, client_id=None):
@@ -67,7 +70,7 @@ class SaasPortalServer(models.Model):
         port = port or self.request_port
         scope = scope or ['userinfo', 'force_login', 'trial', 'skiptheuse']
         scope = ' '.join(scope)
-        client_id = client_id or self.env['saas_portal.client'].generate_client_id()
+        client_id = client_id or self.env['oauth.application'].generate_client_id()
         params = {
             'scope': scope,
             'state': simplejson.dumps(state),
@@ -118,10 +121,11 @@ class SaasPortalServer(models.Model):
         self.env['saas_portal.client'].search([]).storage_usage_monitoring()
 
     @api.one
-    def action_sync_server(self):
+    def action_sync_server(self, updating_client_ID=None):
         state = {
             'd': self.name,
             'client_id': self.client_id,
+            'updating_client_ID': updating_client_ID,
         }
         req, req_kwargs = self._request_server(path='/saas_server/sync_server', state=state, client_id=self.client_id)
         res = requests.Session().send(req, **req_kwargs)
@@ -180,6 +184,7 @@ class SaasPortalPlan(models.Model):
                              'State', compute='_get_state', store=True)
     expiration = fields.Integer('Expiration (hours)', help='time to delete database. Use for demo')
     _order = 'sequence'
+    grace_period = fields.Integer('Grace period (days)', help='initial days before expiration')
 
     dbname_template = fields.Char('DB Names', help='Used for generating client database domain name. Use %i for numbering. Ignore if you use manually created db names', placeholder='crm-%i.odoo.com')
     server_id = fields.Many2one('saas_portal.server', string='SaaS Server',
@@ -189,6 +194,13 @@ class SaasPortalPlan(models.Model):
     website_description = fields.Html('Website description')
     logo = fields.Binary('Logo')
 
+    on_create = fields.Selection([
+        ('login', 'Log into just created instance'),
+        ('email', 'Go to information page that says to check email for credentials')
+    ], string="Workflow on create", default='email')
+    on_create_email_template = fields.Many2one('mail.template',
+                                               default=lambda self: self.env.ref('saas_portal.email_template_create_saas'))
+
     @api.one
     @api.depends('template_id.state')
     def _get_state(self):
@@ -197,8 +209,9 @@ class SaasPortalPlan(models.Model):
         else:
             self.state = 'draft'
 
-    @api.one
+    @api.multi
     def _new_database_vals(self, vals):
+        self.ensure_one()
         vals['max_users'] = self.max_users
         vals['total_storage_limit'] = self.total_storage_limit
         vals['block_on_expiration'] = self.block_on_expiration
@@ -237,7 +250,7 @@ class SaasPortalPlan(models.Model):
             if trial_db_count >= self.maximum_allowed_trial_dbs_per_partner:
                 raise MaximumTrialDBException("Limit of trial databases for this plan is %(maximum)s reached" % {'maximum': self.maximum_allowed_trial_dbs_per_partner})
 
-        vals = {'name': dbname or self.generate_dbname()[0],
+        vals = {'name': dbname or self.generate_dbname(),
                 'server_id': server.id,
                 'plan_id': self.id,
                 'partner_id': partner_id,
@@ -249,7 +262,7 @@ class SaasPortalPlan(models.Model):
             vals['client_id'] = client_id
             client = self.env['saas_portal.client'].search([('client_id', '=', client_id)])
 
-        vals = self._new_database_vals(vals)[0]
+        vals = self._new_database_vals(vals)
 
         if client:
             client.write(vals)
@@ -271,10 +284,11 @@ class SaasPortalPlan(models.Model):
 
         client.period_initial = trial and self.expiration
         trial_expiration_datetime = (fields.Datetime.from_string(client.create_date) + timedelta(hours=client.period_initial)).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
+        initial_expiration_datetime = (fields.Datetime.from_string(client.create_date) + timedelta(self.grace_period)).strftime(DEFAULT_SERVER_DATETIME_FORMAT)
         state = {
             'd': client.name,
             'public_url': client.public_url,
-            'e': trial and trial_expiration_datetime or client.create_date,
+            'e': trial and trial_expiration_datetime or initial_expiration_datetime,
             'r': client.public_url + 'web',
             'owner_user': owner_user_data,
             't': client.trial,
@@ -295,20 +309,29 @@ class SaasPortalPlan(models.Model):
             'access_token': client.oauth_application_id._get_access_token(user_id, create=True),
         }
         url = '{url}?{params}'.format(url=data.get('url'), params=werkzeug.url_encode(params))
+        auth_url = url
+        if self.on_create == 'email':
+            url = '/information'
 
         # send email
-        if notify_user:
-            template = self.env.ref('saas_portal.email_template_create_saas')
-            client.message_post_with_template(template.id, composition_mode='comment')
+        # TODO: get rid of such attributes as ``notify_user``, ``trial`` - move them on plan settings (use different plans for trials and non-trials)
+        if notify_user or self.on_create == 'email':
+            template = self.on_create_email_template
+            if template:
+                client.message_post_with_template(template.id, composition_mode='comment')
+
+        client.write({'expiration_datetime': initial_expiration_datetime})
 
         client.send_params_to_client_db()
         # TODO make async call of action_sync_server here
         # client.server_id.action_sync_server()
+        client.sync_client()
 
-        return {'url': url, 'id': client.id, 'client_id': client_id}
+        return {'url': url, 'id': client.id, 'client_id': client_id, 'auth_url': auth_url}
 
-    @api.one
+    @api.multi
     def generate_dbname(self, raise_error=True):
+        self.ensure_one()
         if not self.dbname_template:
             if raise_error:
                 raise exceptions.Warning(_('Template for db name is not configured'))
@@ -323,18 +346,17 @@ class SaasPortalPlan(models.Model):
 
     @api.multi
     def create_template(self, addons=None):
-        assert len(self) == 1, 'This method is applied only for single record'
-        plan = self[0]
+        self.ensure_one()
         state = {
-            'd': plan.template_id.name,
-            'demo': plan.demo and 1 or 0,
+            'd': self.template_id.name,
+            'demo': self.demo and 1 or 0,
             'addons': addons or [],
-            'lang': plan.lang,
-            'tz': plan.tz,
+            'lang': self.lang,
+            'tz': self.tz,
             'is_template_db': 1,
         }
-        client_id = plan.template_id.client_id
-        plan.template_id.server_id = plan.server_id
+        client_id = self.template_id.client_id
+        self.template_id.server_id = self.server_id
 
         req, req_kwargs = self.server_id._request_server(path='/saas_server/new_database', state=state, client_id=client_id)
         res = requests.Session().send(req, **req_kwargs)
@@ -346,6 +368,8 @@ class SaasPortalPlan(models.Model):
         except:
             _logger.error('Error on parsing response: %s\n%s' % ([req.url, req.headers, req.body], res.text))
             raise
+
+        self.template_id.password = data.get('superuser_password')
         self.template_id.state = data.get('state')
         return data
 
@@ -409,6 +433,7 @@ class SaasPortalDatabase(models.Model):
                              'State', default='draft', track_visibility='onchange')
     host = fields.Char('Host', compute=_compute_host)
     public_url = fields.Char(compute='_compute_public_url', store=True)
+    password = fields.Char()
 
     @api.multi
     @api.depends('server_id.request_port', 'server_id.request_scheme', 'host')
@@ -440,9 +465,9 @@ class SaasPortalDatabase(models.Model):
         if not res.ok:
             raise Warning('Reason: %s \n Message: %s' % (res.reason, res.content))
         data = simplejson.loads(res.text)
-        if not isinstance(data, dict):
+        if not isinstance(data[0], dict):
             raise Warning(data)
-        if data['status'] != 'success':
+        if data[0]['status'] != 'success':
             warning = data[0].get('message', 'Could not backup database; please check your logs')
             raise Warning(warning)
         return True
@@ -552,15 +577,10 @@ class SaasPortalClient(models.Model):
     block_on_expiration = fields.Boolean('Block clients on expiration', default=False)
     block_on_storage_exceed = fields.Boolean('Block clients on storage exceed', default=False)
     storage_exceed = fields.Boolean('Storage limit has been exceed', default=False)
-    subscription_start = fields.Datetime(string="Subscription start", track_visibility='onchange')
+    subscription_start = fields.Datetime(string="Subscription start", track_visibility='onchange', readonly=True)
     expiration_datetime = fields.Datetime(string="Expiration", compute='_compute_expiration',
                                           store=True)
-    period = fields.Integer('Subscribed period (paid and manual)',
-                            compute='_compute_period',
-                            store=True)
-    period_manual = fields.Integer('Manual days',
-                                   help='Subsription days that were set maually',
-                                   readonly=True)
+    period_paid = fields.Integer('Subscribed period (paid days)', readonly=True)
     period_initial = fields.Integer('Initial period for trial (hours)',
                                    help='Subsription initial period in hours for trials',
                                    readonly=True)
@@ -575,22 +595,49 @@ class SaasPortalClient(models.Model):
     }
 
     @api.multi
-    @api.depends('period', 'create_date', 'subscription_start', 'period_initial', 'trial')
+    def change_subscription(self, expiration=None, reason=None):
+        if expiration:
+            expiration_dt = fields.Datetime.from_string(expiration)
+            log_obj = self.env['saas_portal.subscription_log']
+            for record in self:
+                record_expiration_dt = record.expiration_datetime and \
+                        fields.Datetime.from_string(record.expiration_datetime)
+                if record_expiration_dt != expiration_dt:
+                    record.upgrade(payload={'params':
+                                            [{'key': 'saas_client.expiration_datetime',
+                                                'value': expiration, 'hidden': True}]})
+                    # after expiration_datetime is computed on subscription_log_ids change
+                    # base.action.rule triggers send_expiration_info with record.upgrade but not in 8.0
+                    log_obj.create({
+                        'client_id': record.id,
+                        'expiration': record.expiration_datetime,
+                        'expiration_new': expiration,
+                        'reason': reason,
+                        })
+
+    @api.multi
+    def get_manual_timedelta(self):
+        self.ensure_one()
+        td = timedelta()
+        for log_record in self.subscription_log_ids:
+            td += fields.Datetime.from_string(log_record.expiration_new) - \
+                    fields.Datetime.from_string(log_record.expiration)
+        return td
+
+    @api.multi
+    @api.depends('period_paid', 'create_date', 'subscription_start', 'period_initial', 'trial', 'subscription_log_ids')
     def _compute_expiration(self):
         for record in self:
             start = record.subscription_start or record.create_date
-            expiration_datetime = fields.Datetime.from_string(start) + timedelta(record.period)
+
+            expiration_datetime = fields.Datetime.from_string(start) + \
+                timedelta(record.period_paid) + record.get_manual_timedelta() + \
+                timedelta(record.plan_id.grace_period)
             if record.trial:
                 expiration_datetime = expiration_datetime + timedelta(hours=record.period_initial)
             record.expiration_datetime = expiration_datetime
             now = fields.Datetime.from_string(fields.Datetime.now())
             record.expired = expiration_datetime < now
-
-    @api.multi
-    @api.depends('period_manual')
-    def _compute_period(self):
-        for record in self:
-            record.period = record.period_manual
 
     @api.multi
     @api.depends('state')
@@ -659,13 +706,23 @@ class SaasPortalClient(models.Model):
             self.name = new_dbname
 
     @api.multi
+    def sync_client(self):
+        self.ensure_one()
+        self.server_id.action_sync_server(updating_client_ID=self.client_id)
+
+    @api.multi
     def check_partner_access(self, partner_id):
         for record in self:
             if record.partner_id.id != partner_id:
                 raise Forbidden
 
-    @api.one
+    @api.multi
     def duplicate_database(self, dbname=None, partner_id=None, expiration=None):
+        self.ensure_one()
+
+        owner_user = self.env['res.users'].search(
+            [('partner_id', '=', partner_id)], limit=1) or self.env.user
+
         server = self.server_id
         if not server:
             server = self.env['saas_portal.server'].get_saas_server()
@@ -685,24 +742,42 @@ class SaasPortalClient(models.Model):
         client = self.env['saas_portal.client'].create(vals)
         client_id = client.client_id
 
-        scheme = server.request_scheme
-        port = server.request_port
+        owner_user_data = {
+            'user_id': owner_user.id,
+            'login': owner_user.login,
+            'name': owner_user.name,
+            'email': owner_user.email,
+            'password': None,
+        }
+
         state = {
             'd': client.name,
             'e': client.expiration_datetime,
-            'r': '%s://%s:%s/web' % (scheme, client.host, port),
+            'r': client.public_url + 'web',
+            'owner_user': owner_user_data,
+            'public_url': client.public_url,
+            'db_template': self.name,
+            'disable_mail_server': True,
         }
-        state.update({'db_template': self.name,
-                      'disable_mail_server': True})
+
         scope = ['userinfo', 'force_login', 'trial', 'skiptheuse']
-        # TODO use _request_server
-        url = server._request(path='/saas_server/new_database',
-                              scheme=scheme,
-                              port=port,
-                              state=state,
-                              client_id=client_id,
-                              scope=scope,)[0]
-        return url
+
+        req, req_kwargs = server._request_server(path='/saas_server/new_database',
+                                                 state=state,
+                                                 client_id=client_id)
+        res = requests.Session().send(req, **req_kwargs)
+
+        if not res.ok:
+            raise Warning('Reason: %s \n Message: %s' % (res.reason, res.content))
+        try:
+            data = simplejson.loads(res.text)
+        except:
+            _logger.error('Error on parsing response: %s\n%s' % ([req.url, req.headers, req.body], res.text))
+            raise
+
+        data.update({'id': client.id})
+
+        return data
 
     @api.multi
     def send_expiration_info(self):
