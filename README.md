@@ -70,3 +70,26 @@ Build and run
 Execute saas.py script and wait some time
 
 > python saas.py --portal-create --portal-db-name=odoo.local.com(main database) --server-create --server-db-name=s1.odoo.local.com(server database) --run --odoo-script=/home/[user]/Odoo/odoo100/bin/start_odoo --odoo-config=/home/[user]/Odoo/odoo100/etc/odoo.cfg
+
+usage: saas.py [-h] [--suffix SUFFIX] [--odoo-script ODOO_SCRIPT]
+               [--odoo-config ODOO_CONFIG] [--odoo-data-dir ODOO_DATA_DIR]
+               [--odoo-xmlrpc-port XMLRPC_PORT]
+               [--odoo-longpolling-port LONGPOLLING_PORT]
+               [--local-xmlrpc-port LOCAL_XMLRPC_PORT]
+               [--local-portal-host LOCAL_PORTAL_HOST]
+               [--local-server-host LOCAL_SERVER_HOST] [--odoo-log-db LOG_DB]
+               [--odoo-addons-path ADDONS_PATH] [--odoo-db-filter DB_FILTER]
+               [--odoo-test-enable] [--odoo-without-demo]
+               [--master-password MASTER_PASSWORD]
+               [--admin-password ADMIN_PASSWORD] [--base-domain BASE_DOMAIN]
+               [--install-modules INSTALL_MODULES] [-s] [--drop-databases]
+               [--portal-create] [--portal-db-name PORTAL_DB_NAME]
+               [--portal-modules PORTAL_INSTALL_MODULES] [--server-create]
+               [--server-db-name SERVER_DB_NAME]
+               [--server-modules SERVER_INSTALL_MODULES] [--plan-create]
+               [--plan-name PLAN_NAME]
+               [--plan-template-db-name PLAN_TEMPLATE_DB_NAME]
+               [--plan-clients PLAN_CLIENTS]
+               [--demo-repositories DEMO_REPOSITORIES]
+               [--create-demo-templates] [--print-local-hosts] [--run]
+               [--test] [--cleanup]
