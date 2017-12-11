@@ -1,5 +1,5 @@
-# -*- coding: utf-8 -*-
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 ODOO_VERSION = 10
 SUPERUSER_ID = 1
@@ -52,6 +52,7 @@ settings_group.add_argument('--odoo-config', dest='odoo_config', help='Path to o
 settings_group.add_argument('--odoo-data-dir', dest='odoo_data_dir', help='Path to odoo data dir', default=None)
 settings_group.add_argument('--odoo-xmlrpc-port', dest='xmlrpc_port', default='8069', help='Port to run odoo temporarly')
 settings_group.add_argument('--odoo-longpolling-port', dest='longpolling_port', default='8072', help='Port to run odoo temporarly')
+settings_group.add_argument('--use-existed-odoo', dest='use_existed_odoo', action='store_true', default=False, help='Wait infinitly for 8069 port. Usefull in docker environment.')
 settings_group.add_argument('--local-xmlrpc-port', dest='local_xmlrpc_port', default=None, help='Port to be used for server-wide requests')
 settings_group.add_argument('--local-portal-host', dest='local_portal_host', help='Address for internal connection to portal', default="localhost")
 settings_group.add_argument('--local-server-host', dest='local_server_host', help='Address for internal connection to portal', default="localhost")
@@ -64,6 +65,7 @@ settings_group.add_argument('--odoo-without-demo', dest='without_demo', action='
 settings_group.add_argument('--master-password', dest='master_password', help='Master Password. Used on database creation.')
 settings_group.add_argument('--admin-password', dest='admin_password', help='Password for admin user. It\'s used for all databases.', default='admin')
 settings_group.add_argument('--base-domain', dest='base_domain', help='Base domain. Used for system that work with --db-filter=%d')
+settings_group.add_argument('--dynamic-base-domain', dest='dynamic_base_domain', default=False, action='store_true', help='Force to keep Base domain empty. It will be updated on first admin logining')
 settings_group.add_argument('--install-modules', dest='install_modules', help='Comma-separated list of modules to install. They will be automatically installed on appropriate database (Portal or Server)', default='saas_portal_start,saas_portal_sale_online')
 #settings_group.add_argument('--db_user', dest='db_user', help='database user name')
 settings_group.add_argument('-s', '--simulate', dest='simulate', action='store_true', help='Don\'t make actual changes. Just show what script is going to do.')
@@ -79,6 +81,8 @@ server_group = parser.add_argument_group('Server creation')
 server_group.add_argument('--server-create', dest='server_create', help='Create SaaS Server database', action='store_true')
 server_group.add_argument('--server-db-name', dest='server_db_name', default='server-1.saas-portal-{suffix}.local')
 server_group.add_argument('--server-modules', dest='server_install_modules', help='Comma-separated list of modules to install on Server')
+server_group.add_argument('--server-hosts-template', dest='server_hosts_template',
+                          help='server-wide host name template of client instances, i.e. {dbname}.odoo-10.{base_saas_domain}, {dbname} is the default')
 
 plan_group = parser.add_argument_group('Plan creation')
 plan_group.add_argument('--plan-create', dest='plan_create', help='Create Plan', action='store_true')
@@ -105,7 +109,7 @@ args = vars(parser.parse_args())
 # format vars
 suffix = args['suffix']
 for a in args:
-    if isinstance(args[a], str):
+    if isinstance(args[a], str) and not a == 'server_hosts_template':
         args[a] = args[a].format(suffix=suffix)
 
 
@@ -171,7 +175,7 @@ def main():
     plan_id = None
     pid = None
 
-    port_is_open = wait_net_service('127.0.0.1', int(xmlrpc_port), 3)
+    port_is_open = wait_net_service('127.0.0.1', int(xmlrpc_port), 3 if not args.get('use_existed_odoo') else False)
     if port_is_open:
         log('Port is used. Probably, odoo is already running. Let\'s try to use it. It it will fail, you need either stop odoo or pass another port to saas.py via --xmlrpc-port arg')
     else:
@@ -242,7 +246,7 @@ def createdb(dbname):
 
     # create db if not exist
     created = False
-    log('create database via xmlrpc')
+    log('create database via xmlrpc', dbname)
     try:
         rpc_db.create_database(master_password, dbname, demo, lang, admin_password)
         created = True
@@ -312,7 +316,8 @@ def rpc_init_portal(dbname):
     base_saas_domain = dbname
     if args.get('base_domain') and '.' not in dbname:
         base_saas_domain = args.get('base_domain')
-    rpc_execute_kw(auth, 'ir.config_parameter', 'set_param', ['saas_portal.base_saas_domain', base_saas_domain])
+    if not args.get('dynamic_base_domain'):
+        rpc_execute_kw(auth, 'ir.config_parameter', 'set_param', ['saas_portal.base_saas_domain', base_saas_domain])
 
     # Allow external users to sign up
     rpc_execute_kw(auth, 'ir.config_parameter', 'set_param', ['auth_signup.allow_uninvited', repr(True)])
@@ -344,15 +349,17 @@ def rpc_add_server_to_portal(portal_db_name):
     auth = rpc_auth(portal_db_name, admin_password=args.get('admin_password'), host=args.get('local_portal_host'))
     server_db_name = args.get('server_db_name')
     uuid = rpc_get_uuid(server_db_name)
-    rpc_execute_kw(auth, 'saas_portal.server', 'create', [
-        {
+    vals = {
             'name': server_db_name,
             'client_id': uuid,
             'local_port': local_xmlrpc_port,
             'local_host': args.get('local_server_host'),
             'password': args.get('admin_password'),
-        }
-    ])
+    }
+    server_hosts_template = args.get('server_hosts_template')
+    if server_hosts_template:
+        vals.update({'clients_host_template': server_hosts_template})
+    rpc_execute_kw(auth, 'saas_portal.server', 'create', [vals])
 
 
 def rpc_add_demo_repositories(demo_repositories):
