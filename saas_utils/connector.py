@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 ##############################################################################
 #
 #    OpenERP, Open Source Management Solution
@@ -19,12 +18,10 @@
 #
 ##############################################################################
 import odoo
-from odoo import SUPERUSER_ID
 
 
 def call(dbname, model, method, *args, **kwargs):
     instance = odoo.registry(dbname)
-    with instance.cursor() as cr:
-        obj = instance.get(model)
-        if hasattr(obj, method):
-            return getattr(obj, method)(*args, **kwargs)
+    obj = instance.get(model)
+    if hasattr(obj, method):
+        return getattr(obj, method)(*args, **kwargs)
