@@ -66,13 +66,13 @@ settings_group.add_argument('--odoo-test-enable', dest='test_enable', action='st
 settings_group.add_argument('--odoo-without-demo', dest='without_demo', action='store_true', default=False)
 settings_group.add_argument('--master-password', dest='master_password', help='Master Password. Used on database creation.')
 settings_group.add_argument('--admin-password', dest='admin_password', help='Password for admin user. It\'s used for all databases.', default='admin')
-settings_group.add_argument('--base-domain', dest='base_domain', help='Base domain. Used for system that work with --db-filter=%d')
+settings_group.add_argument('--base-domain', dest='base_domain', help='Base domain. Used for system that work with --db-filter=%%d')
 settings_group.add_argument('--dynamic-base-domain', dest='dynamic_base_domain', default=False, action='store_true', help='Force to keep Base domain empty. It will be updated on first admin logining')
 settings_group.add_argument('--install-modules', dest='install_modules', help='Comma-separated list of modules to install. They will be automatically installed on appropriate database (Portal or Server)', default='saas_portal_start,saas_portal_sale_online')
 #settings_group.add_argument('--db_user', dest='db_user', help='database user name')
 settings_group.add_argument('-s', '--simulate', dest='simulate', action='store_true', help='Don\'t make actual changes. Just show what script is going to do.')
 settings_group.add_argument('--drop-databases', dest='drop_databases', help='Drop existed databases before creating portal or server', action='store_true', default=False)
-
+settings_group.add_argument('--db-lang', dest='db_lang', help='DB language', default='en_US')
 
 portal_group = parser.add_argument_group('Portal creation')
 portal_group.add_argument('--portal-create', dest='portal_create', help='Create SaaS Portal database', action='store_true')
@@ -120,7 +120,7 @@ def get_odoo_config():
     config_file = args.get('odoo_config') or os.environ.get("OPENERP_SERVER")
     if not config_file:
         return res
-    p = ConfigParser.ConfigParser()
+    p = ConfigParser.RawConfigParser()
     log('Read odoo config', config_file)
     p.read(config_file)
     for (name, value) in p.items('options'):
@@ -241,7 +241,7 @@ def createdb(dbname):
     without_demo = args.get('without_demo')
     main_url = 'http://localhost:%s' % xmlrpc_port
     demo = not without_demo
-    lang = 'en_US'  # TODO
+    lang = args.get('db_lang')
     admin_password = args.get('admin_password')
 
     rpc_db = xmlrpc.client.ServerProxy('{}/xmlrpc/2/db'.format(main_url))
@@ -427,14 +427,16 @@ def rpc_create_plan(portal_db_name):
     #      * click [Save]
 
     # TODO: use rpc_get_server_id
-    res = rpc_execute_kw(auth, 'saas_portal.server', 'search', [[]])
+    res = rpc_execute_kw(auth, 'saas_portal.server', 'search', [[('name', '=', args.get('server_db_name'))]])
+    if not res:
+        res = rpc_execute_kw(auth, 'saas_portal.server', 'search', [[]])
     # use last created server
     log('search server', res)
     server_id = res[0]
 
     template_id = rpc_execute_kw(auth, 'saas_portal.database', 'create', [{'name': plan_template_db_name}])
 
-    plan_id = rpc_execute_kw(auth, 'saas_portal.plan', 'create', [{'name': plan_name, 'server_id': server_id, 'template_id': template_id, 'dbname_template': plan_clients}])
+    plan_id = rpc_execute_kw(auth, 'saas_portal.plan', 'create', [{'name': plan_name, 'server_id': server_id, 'template_id': template_id, 'dbname_template': plan_clients, 'demo': not args.get('without_demo')}])
 
     #      * click [Create Template DB].
     #      * wait couple minutes while Database is being created.
